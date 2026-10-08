@@ -68,9 +68,22 @@
 
         async function initialiserEtChargerCalendrier() {
         try {
-            // 1. Récupération des tables
-            let planningData = await grist.docApi.fetchTable('PlannigDiffusion');
-            const raccourcisData = await grist.docApi.fetchTable('Raccourcis');
+            // 1. Récupération des tables et sécurisation du format
+            let planningBrut = await grist.docApi.fetchTable('PlannigDiffusion');
+            let raccourcisBrut = await grist.docApi.fetchTable('Raccourcis');
+
+            // Gérer les formats de retour de Grist (tableau direct ou objet listant les enregistrements)
+            let planningData = Array.isArray(planningBrut) ? planningBrut : (planningBrut.id ? planningBrut.id.map((id, index) => {
+                let obj = { id: id };
+                for (let key in planningBrut) { if (key !== 'id') obj[key] = planningBrut[key][index]; }
+                return obj;
+            }) : Object.values(planningBrut)[0] || []);
+
+            let raccourcisData = Array.isArray(raccourcisBrut) ? raccourcisBrut : (raccourcisBrut.id ? raccourcisBrut.id.map((id, index) => {
+                let obj = { id: id };
+                for (let key in raccourcisBrut) { if (key !== 'id') obj[key] = raccourcisBrut[key][index]; }
+                return obj;
+            }) : Object.values(raccourcisBrut)[0] || []);
 
             if (!raccourcisData || raccourcisData.length === 0) {
                 document.getElementById('grille-calendrier').innerHTML = "<p>Aucun raccourci trouvé dans la table 'Raccourcis'.</p>";
