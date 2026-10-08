@@ -66,103 +66,137 @@
     // 2. Attendre que l'API Grist soit prête
     grist.ready({requiredAccess: 'full'});
 
-    async function chargerCalendrie(){
-        try{
+        async function initialiserEtChargerCalendrier() {
+        try {
+            // 1. Récupération des tables
+            let planningData = await grist.docApi.fetchTable('PlannigDiffusion');
+            const raccourcisData = await grist.docApi.fetchTable('Raccourcis');
 
-        const planningData = await grist.docApi.fetchTable('PlannigDiffusion');
-         const raccourcisData = await grist.docApi.fetchTable('Raccourcis');
-
-         const raccourcisMap = {};
-         if (raccourcisData){
-            raccourcisData.forEach(r=>{
-                reccourcisMap[r.id]= r;
-            });
-        
-        }
-
-        const aujourdhui = new Date();
-        aujourdhui.setHours(0,0,0,0);
-        const moisActuel = aujourdhui.getMonth();
-        const anneeActuelle = aujourdhui.getFullYear();
-
-        const moisNoms = ["Janvier","Férier","Mars","Avril","Mai","Juin","Juillet","Aout","Septembre","Octobre","Novembre","Décembre"];
-        document.getElementById('titre-mois').innerText = moisNoms[moisActuel] + " " + anneeActuelle;
-        const conteneurGrille = document.getElementById('grille-calendrier');
-       conteneurGrille.innerHTML= "";
-       const dernierJourDuMois = new Date (anneeActuelle, moisActuel + 1, 0).getDate();
-       let joursSemaine = ["Dim", "Lun" , "Mar", "Mer" , "Jeu" , "Ven" , "Sam"];
-       for (let jour = 1; jour <= dernierJourDuMois; jour++) {
-        const dateCourante = new Date (anneeActuelle, moisActuel, jour);
-        dateCourante.setHours(0,0,0,0);
-        //ignorer les weekends 
-        const joursSemaine = dateCourante.getDay;
-        if (joursSemaineNum === 0 || joursSemaineNum === 6) continue;
-
-        const caseDiv = document.createElement('div');
-        let statutClasse = "case-jour";
-        if (dateCourante.getTime() <aujourdhui.getTime()){
-            statutClasse += "passe";
-
-        }else if (dateCourante.getTime() === aujourdhui.getTime()){
-            statutClasse += "aujourdhui";
-        }else {
-            statutClasse+= "futur";
-        }
-        caseDiv.className = statutClasse;
-
-        let jourTexte = joursSemaine[joursSemaineNum]  + " " + jour;
-        let htmlContent = '<div class ="titre-jour">${jourTeste}</div>';
-        let planningTrouve = null;
-        if (planningData) {
-            planningTrouve = planningData.find(p=> {
-                if (!p.Date_Diffusion && !p.DateDiffusion) return false;
-                let dVal = p.Date_Diffusion || p.DateDiffusion;
-                let timestamp = typeof dVal === "number" ? dVal * 1000 : new Date(dVal).getTime(); 
-                let dDate = new Date(timestamp);
-                dDate.setHours(0,0,0,0);
-                return dDate.getTime() === dateCourante.getTime();
-
-            });
-
-        }
-
-        if (planningTrouve) {
-            const rId = planningTrouve.RaccouciID || planningTrouve.Raccouci_Cible || planningTrouve.Raccourci;
-            const raccourciObj = raccourcisMap[rId];
-            if(raccourciObj){
-                const combi = raccourciObj.Combinaison || "Raccourci";
-                const desc = raccourciObj.Description || raccourciObj.Remarque|| "";
-                htmlContent += '<div class ="raccourci">${combi}</div>' + '<div style = "font-size : 0.85; color: #555;">${desc}</div>';
-
-            }else {
-                htmlContent += '<div style= "font-style : italic ; color: #888;"> Assigné (ID : ${rId}</div>';
-
+            if (!raccourcisData || raccourcisData.length === 0) {
+                document.getElementById('grille-calendrier').innerHTML = "<p>Aucun raccourci trouvé dans la table 'Raccourcis'.</p>";
+                return;
             }
 
-        }else {
-            if (dateCourante.getTime()> aujourdhui.getTime()){
-                htmlContent += '<div style= "font-style : italic ; color: #888;"> Verrouillé </div>';
+            // 2. Si la table PlannigDiffusion est vide, on la remplit automatiquement (Novembre 2026 et suite)
+            if (!planningData || planningData.length === 0) {
+                document.getElementById('titre-mois').innerText = "Génération automatique du planning...";
+                
+                let nouveauxEnregistrements = [];
+                let annee = 2026;
+                let mois = 10; // Novembre (0 à 11)
+                let indexRaccourci = 0;
 
-            }else{
-               htmlContent += '<div style= "font-style : italic ; color: #888;"> Aucun raccourci  </div>'; 
+                // Générer les jours ouvrés pour les prochains mois (ex: Novembre et Décembre 2026)
+                for (let m = 0; m < 2; m++) {
+                    let moisCourant = mois + m;
+                    let anneeCourante = annee;
+                    if (moisCourant > 11) {
+                        moisCourant = 0;
+                        anneeCourante++;
+                    }
+
+                    let dernierJour = new Date(anneeCourante, moisCourant + 1, 0).getDate();
+
+                    for (let jour = 1; jour <= dernierJour; jour++) {
+                        let d = new Date(anneeCourante, moisCourant, jour);
+                        let jourSemaine = d.getDay();
+
+                        // Ignorer week-ends
+                        if (jourSemaine === 0 || jourSemaine === 6) continue;
+
+                        let raccourciAssigne = raccourcisData[indexRaccourci % raccourcisData.length];
+                        indexRaccourci++;
+
+                        let dateStr = `${anneeCourante}-${String(moisCourant + 1).padStart(2, '0')}-${String(jour).padStart(2, '0')}`;
+
+                        nouveauxEnregistrements.push({
+                            Rccourci_Cible: raccourciAssigne.id,
+                            Date_Diffusion: dateStr
+                        });
+                    }
+                }
+
+                // Insertion automatique dans la table Grist PlannigDiffusion
+                await grist.docApi.addRecords('PlannigDiffusion', nouveauxEnregistrements);
+                
+                // Recharger les données après insertion
+                planningData = await grist.docApi.fetchTable('PlannigDiffusion');
             }
+
+            // 3. Affichage du mois de Novembre 2026
+            const anneeCible = 2026;
+            const moisCible = 10;
+
+            const aujourdhui = new Date();
+            aujourdhui.setHours(0,0,0,0);
+
+            const moisNoms = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
+            document.getElementById('titre-mois').innerText = moisNoms[moisCible] + " " + anneeCible;
+
+            const conteneurGrille = document.getElementById('grille-calendrier');
+            conteneurGrille.innerHTML = "";
+
+            const dernierJourDuMois = new Date(anneeCible, moisCible + 1, 0).getDate();
+            let joursSemaine = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];
+
+            const raccourcisMap = {};
+            raccourcisData.forEach(r => { raccourcisMap[r.id] = r; });
+
+            // 4. Boucle d'affichage pour Novembre 2026
+            for (let jour = 1; jour <= dernierJourDuMois; jour++) {
+                const dateCourante = new Date(anneeCible, moisCible, jour);
+                dateCourante.setHours(0,0,0,0);
+
+                const jourSemaineNum = dateCourante.getDay();
+                if (jourSemaineNum === 0 || jourSemaineNum === 6) continue;
+
+                const caseDiv = document.createElement('div');
+                let statutClasse = "case-jour ";
+                
+                if (dateCourante.getTime() < aujourdhui.getTime()) {
+                    statutClasse += "passe";
+                } else if (dateCourante.getTime() === aujourdhui.getTime()) {
+                    statutClasse += "aujourdhui";
+                } else {
+                    statutClasse += "futur";
+                }
+                caseDiv.className = statutClasse;
+
+                let jourTexte = joursSemaine[jourSemaineNum] + " " + jour;
+                let htmlContent = `<div class="titre-jour">${jourTexte}</div>`;
+
+                let planningTrouve = planningData.find(p => {
+                    let dVal = p.Date_Diffusion || p.DateDiffusion;
+                    if (!dVal) return false;
+                    let dDate = new Date(typeof dVal === "number" ? dVal * 1000 : dVal);
+                    dDate.setHours(0,0,0,0);
+                    return dDate.getTime() === dateCourante.getTime();
+                });
+
+                if (planningTrouve) {
+                    const rId = planningTrouve.Rccourci_Cible || planningTrouve.RaccourciID;
+                    const raccourciObj = raccourcisMap[rId];
+
+                    if (raccourciObj) {
+                        const combi = raccourciObj.Combinaison || "Raccourci";
+                        const desc = raccourciObj.Description || raccourciObj.Remarque || "";
+                        htmlContent += `<div class="raccourci">${combi}</div>` +
+                                       `<div style="font-size: 0.85em; color: #555;">${desc}</div>`;
+                    }
+                }
+
+                caseDiv.innerHTML = htmlContent;
+                conteneurGrille.appendChild(caseDiv);
+            }
+
+        } catch (error) {
+            console.error("Erreur :", error);
+            document.getElementById('grille-calendrier').innerHTML = "<p>Erreur lors de l'initialisation. Vérifie les noms des tables.</p>";
         }
-        caseDiv.innerHTML = htmlContent;
-        conteneurGrille.appendChild(caseDiv);
-
-
-        
-       }
-
-    
-        
-    }catch (error) {
-        console.error("Erreur de chargement :" , error);
-        document.getElementById('grille-calendrier').innerHTML = "<p>Erreur de lecture des tables Grist.</p>";
     }
 
-    }
-    chergerClendrier();
+    initialiserEtChargerCalendrier();
+
      </script>
         </body>
         </html>
