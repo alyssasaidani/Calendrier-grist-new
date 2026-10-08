@@ -66,13 +66,12 @@
     // 2. Attendre que l'API Grist soit prête
     grist.ready({requiredAccess: 'full'});
 
-        async function initialiserEtChargerCalendrier() {
+           async function initialiserEtChargerCalendrier() {
         try {
             // 1. Récupération des tables et sécurisation du format
             let planningBrut = await grist.docApi.fetchTable('PlannigDiffusion');
             let raccourcisBrut = await grist.docApi.fetchTable('Raccourcis');
 
-            // Gérer les formats de retour de Grist (tableau direct ou objet listant les enregistrements)
             let planningData = Array.isArray(planningBrut) ? planningBrut : (planningBrut.id ? planningBrut.id.map((id, index) => {
                 let obj = { id: id };
                 for (let key in planningBrut) { if (key !== 'id') obj[key] = planningBrut[key][index]; }
@@ -99,7 +98,6 @@
                 let mois = 10; // Novembre (0 à 11)
                 let indexRaccourci = 0;
 
-                // Générer les jours ouvrés pour les prochains mois (ex: Novembre et Décembre 2026)
                 for (let m = 0; m < 2; m++) {
                     let moisCourant = mois + m;
                     let anneeCourante = annee;
@@ -114,7 +112,6 @@
                         let d = new Date(anneeCourante, moisCourant, jour);
                         let jourSemaine = d.getDay();
 
-                        // Ignorer week-ends
                         if (jourSemaine === 0 || jourSemaine === 6) continue;
 
                         let raccourciAssigne = raccourcisData[indexRaccourci % raccourcisData.length];
@@ -129,11 +126,23 @@
                     }
                 }
 
-                // Insertion automatique dans la table Grist PlannigDiffusion
-                await grist.docApi.addRecords('PlannigDiffusion', nouveauxEnregistrements);
+                // Utilisation de applyUserActions pour insérer les données dans Grist
+                let actions = nouveauxEnregistrements.map(record => [
+                    'AddRecord', 'PlannigDiffusion', null, {
+                        Rccourci_Cible: record.Rccourci_Cible,
+                        Date_Diffusion: record.Date_Diffusion
+                    }
+                ]);
+
+                await grist.docApi.applyUserActions(actions);
                 
                 // Recharger les données après insertion
-                planningData = await grist.docApi.fetchTable('PlannigDiffusion');
+                let planningBrutApres = await grist.docApi.fetchTable('PlannigDiffusion');
+                planningData = Array.isArray(planningBrutApres) ? planningBrutApres : (planningBrutApres.id ? planningBrutApres.id.map((id, index) => {
+                    let obj = { id: id };
+                    for (let key in planningBrutApres) { if (key !== 'id') obj[key] = planningBrutApres[key][index]; }
+                    return obj;
+                }) : Object.values(planningBrutApres)[0] || []);
             }
 
             // 3. Affichage du mois de Novembre 2026
@@ -208,7 +217,6 @@
         }
     }
 
-    initialiserEtChargerCalendrier();
 
      </script>
         </body>
